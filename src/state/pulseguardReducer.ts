@@ -1,87 +1,115 @@
 /**
- * PulseGuard — Reducer (state machine: idle → active → ended)
+ * PulseGuard — Reducer (state machine: loading → waiting → checking → link_invalid)
  *
- * Replaces the DemoGuard 15-phase enrollment reducer with a simple
- * 3-state lifecycle for continuous work-session monitoring.
+ * Periodic check model: the app loads config from a signed token, then
+ * cycles between waiting (idle, next check scheduled) and checking
+ * (active capture window) indefinitely until the app is closed.
+ *
+ * States:
+ * - loading: fetching link config from server
+ * - waiting: next check is scheduled, nothing running
+ * - checking: capture window active, collectors running
+ * - link_invalid: token expired or invalid, unrecoverable
  *
  * @copyright (c) 2026 Benjamin BARRERE / IA SOLUTION
  * Patents Pending FR2514274 | FR2514546
  */
 
-export type PulseGuardPhase = 'idle' | 'active' | 'ended';
+export type PulseGuardPhase = 'loading' | 'waiting' | 'checking' | 'link_invalid';
 
 export interface PulseGuardState {
   phase: PulseGuardPhase;
-  sessionPublicId: string;
-  startedAt: string | null;
-  endedAt: string | null;
-  /** Reason the session ended — 'user' (explicit stop) or 'background' (auto-timeout). */
-  endReason: 'user' | 'background' | null;
-  /** Number of snapshots successfully submitted. */
-  snapshotsSent: number;
-  /** Last error from a snapshot submission (non-fatal — session continues). */
+  /** Signed link token extracted from URL. */
+  linkToken: string;
+  /** Check frequency in ms (from server config). */
+  checkFrequencyMs: number;
+  /** Capture window in seconds (from server config). */
+  captureWindowSec: number;
+  /** Number of checks successfully completed. */
+  checksSent: number;
+  /** Last error from a snapshot submission (non-fatal — cycle continues). */
   lastSubmitError: string | null;
   /** Whether the app is currently in the background (visibility hidden). */
   isBackgrounded: boolean;
+  /** Error message when phase is link_invalid. */
+  linkError: string | null;
 }
 
 export const initialPulseGuardState: PulseGuardState = {
-  phase: 'idle',
-  sessionPublicId: '',
-  startedAt: null,
-  endedAt: null,
-  endReason: null,
-  snapshotsSent: 0,
+  phase: 'loading',
+  linkToken: '',
+  checkFrequencyMs: 0,
+  captureWindowSec: 0,
+  checksSent: 0,
   lastSubmitError: null,
   isBackgrounded: false,
+  linkError: null,
 };
 
 export type PulseGuardAction =
-  | { type: 'START'; sessionPublicId: string }
-  | { type: 'SNAPSHOT_SENT' }
-  | { type: 'SNAPSHOT_ERROR'; error: string }
+  | { type: 'CONFIG_LOADED'; linkToken: string; checkFrequencyMs: number; captureWindowSec: number }
+  | { type: 'CONFIG_ERROR'; error: string }
+  | { type: 'START_CHECK' }
+  | { type: 'CHECK_SENT' }
+  | { type: 'CHECK_ERROR'; error: string }
   | { type: 'BACKGROUND_ENTER' }
   | { type: 'BACKGROUND_EXIT' }
-  | { type: 'END'; reason: 'user' | 'background' }
-  | { type: 'RESET' };
-
-const VALID_TRANSITIONS: Record<PulseGuardPhase, PulseGuardPhase[]> = {
-  idle: ['active'],
-  active: ['ended'],
-  ended: ['idle'],
-};
-
-function isValidTransition(from: PulseGuardPhase, to: PulseGuardPhase): boolean {
-  const allowed = VALID_TRANSITIONS[from];
-  return allowed ? allowed.includes(to) : false;
-}
+  | { type: 'CHECK_CANCELLED' };
 
 export function pulseguardReducer(
   state: PulseGuardState,
   action: PulseGuardAction,
 ): PulseGuardState {
   switch (action.type) {
-    case 'START': {
+    case 'CONFIG_LOADED': {
       return {
-        ...initialPulseGuardState,
-        phase: 'active',
-        sessionPublicId: action.sessionPublicId,
-        startedAt: new Date().toISOString(),
+        ...state,
+        phase: 'waiting',
+        linkToken: action.linkToken,
+        checkFrequencyMs: action.checkFrequencyMs,
+        captureWindowSec: action.captureWindowSec,
+        linkError: null,
       };
     }
 
-    case 'SNAPSHOT_SENT': {
+    case 'CONFIG_ERROR': {
       return {
         ...state,
-        snapshotsSent: state.snapshotsSent + 1,
+        phase: 'link_invalid',
+        linkError: action.error,
+      };
+    }
+
+    case 'START_CHECK': {
+      if (state.phase !== 'waiting') return state;
+      return {
+        ...state,
+        phase: 'checking',
         lastSubmitError: null,
       };
     }
 
-    case 'SNAPSHOT_ERROR': {
+    case 'CHECK_SENT': {
       return {
         ...state,
+        phase: 'waiting',
+        checksSent: state.checksSent + 1,
+        lastSubmitError: null,
+      };
+    }
+
+    case 'CHECK_ERROR': {
+      return {
+        ...state,
+        phase: 'waiting',
         lastSubmitError: action.error,
+      };
+    }
+
+    case 'CHECK_CANCELLED': {
+      return {
+        ...state,
+        phase: 'waiting',
       };
     }
 
@@ -91,21 +119,6 @@ export function pulseguardReducer(
 
     case 'BACKGROUND_EXIT': {
       return { ...state, isBackgrounded: false };
-    }
-
-    case 'END': {
-      if (!isValidTransition(state.phase, 'ended')) return state;
-      return {
-        ...state,
-        phase: 'ended',
-        endedAt: new Date().toISOString(),
-        endReason: action.reason,
-        isBackgrounded: false,
-      };
-    }
-
-    case 'RESET': {
-      return { ...initialPulseGuardState };
     }
 
     default:

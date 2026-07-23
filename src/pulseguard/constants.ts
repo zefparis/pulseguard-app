@@ -1,21 +1,26 @@
 /**
  * PulseGuard — Configuration constants
  *
- * All tunable values for the continuous monitoring lifecycle.
- * Centralized here to avoid magic numbers scattered across the codebase.
+ * In the periodic check model, checkFrequencyMs and captureWindowSec come
+ * from the server via GET /api/pulseguard/link-config. The constants below
+ * are FALLBACK values used only if the link-config call fails unexpectedly
+ * after the token has already been validated (e.g. transient network loss).
  *
  * @copyright (c) 2026 Benjamin BARRERE / IA SOLUTION
  * Patents Pending FR2514274 | FR2514546
  */
 
-/** Interval between periodic signal snapshot submissions (milliseconds). Default: 10 minutes. */
-export const PULSEGUARD_SNAPSHOT_INTERVAL_MS = 10 * 60 * 1000;
+/** Fallback check frequency (milliseconds) if link-config fetch fails. Default: 5 minutes. */
+export const PULSEGUARD_FALLBACK_CHECK_FREQUENCY_MS = 5 * 60 * 1000;
 
-/** How long the app can stay in background (hidden) before the session auto-ends (milliseconds). Default: 5 minutes. */
-export const PULSEGUARD_BACKGROUND_TIMEOUT_MS = 5 * 60 * 1000;
+/** Fallback capture window duration (seconds) if link-config fetch fails. Default: 30 seconds. */
+export const PULSEGUARD_FALLBACK_CAPTURE_WINDOW_SEC = 30;
 
-/** API endpoint for submitting signal snapshots. Backend not yet implemented — client-side only for now. */
+/** API endpoint for submitting signal snapshots. */
 export const PULSEGUARD_API_PATH = '/api/pulseguard/signals';
+
+/** API endpoint for fetching link configuration from token. */
+export const PULSEGUARD_LINK_CONFIG_PATH = '/api/pulseguard/link-config';
 
 /** Request timeout for snapshot submission (milliseconds). */
 export const PULSEGUARD_REQUEST_TIMEOUT_MS = 15_000;

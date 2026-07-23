@@ -15,13 +15,19 @@ import { useState, type MouseEvent } from 'react';
 import { useI18n } from '../i18n/I18nContext';
 
 interface PulseGuardIndicatorProps {
+  /** Current phase to display. */
+  phase?: 'waiting' | 'checking';
   /** Whether the detail popover is initially open. */
   initialShowInfo?: boolean;
 }
 
-export function PulseGuardIndicator({ initialShowInfo = false }: PulseGuardIndicatorProps) {
+export function PulseGuardIndicator({ phase = 'waiting', initialShowInfo = false }: PulseGuardIndicatorProps) {
   const { t } = useI18n();
   const [showInfo, setShowInfo] = useState(initialShowInfo);
+
+  const indicatorText = phase === 'checking'
+    ? t('pulseguard.indicatorChecking')
+    : t('pulseguard.indicatorWaiting');
 
   return (
     <>
@@ -52,7 +58,7 @@ export function PulseGuardIndicator({ initialShowInfo = false }: PulseGuardIndic
             <path d="M3.22 12H9.5l.5-1 2 4.5 2-7 1.5 3.5h5.27" />
           </svg>
         </span>
-        <span>{t('pulseguard.indicatorActive')}</span>
+        <span>{indicatorText}</span>
         <button
           onClick={() => setShowInfo(true)}
           style={{

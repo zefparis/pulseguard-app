@@ -1,93 +1,149 @@
 /**
- * PulseGuard — Main app component (continuous monitoring lifecycle)
+ * PulseGuard — Main app component (periodic check lifecycle)
  *
- * Replaces DemoGuard's 15-phase enrollment flow with a simple 3-state cycle:
- * idle → active → ended
+ * Loads a signed link token from the URL (?token=...), fetches check
+ * configuration from the server, then cycles between waiting and
+ * checking states: every checkFrequencyMs, starts collectors for
+ * captureWindowSec seconds, sends the snapshot, returns to waiting.
  *
- * During 'active': collectors run continuously, snapshots are submitted
- * every PULSEGUARD_SNAPSHOT_INTERVAL_MS. If the app goes background for
- * longer than PULSEGUARD_BACKGROUND_TIMEOUT_MS, the session auto-ends.
+ * If the app goes background during an active check, the check is
+ * cancelled (collectors stopped) and the next check is rescheduled
+ * when the app returns to foreground.
  *
  * @copyright (c) 2026 Benjamin BARRERE / IA SOLUTION
  * Patents Pending FR2514274 | FR2514546
  */
 
-import { useReducer, useRef, useCallback, useEffect, useState } from 'react';
+import { useReducer, useRef, useCallback, useEffect } from 'react';
 import { pulseguardReducer, initialPulseGuardState } from './state/pulseguardReducer';
 import { useContinuousSignals } from './hooks/useContinuousSignals';
-import { submitPulseGuardSnapshot, type PulseGuardSnapshotPayload } from './pulseguard/api';
-import { PULSEGUARD_SNAPSHOT_INTERVAL_MS, PULSEGUARD_BACKGROUND_TIMEOUT_MS, PULSEGUARD_VERSION, PULSEGUARD_SOURCE } from './pulseguard/constants';
+import { submitPulseGuardSnapshot, fetchLinkConfig, type PulseGuardSnapshotPayload, type PulseGuardApiError } from './pulseguard/api';
+import { PULSEGUARD_FALLBACK_CHECK_FREQUENCY_MS, PULSEGUARD_FALLBACK_CAPTURE_WINDOW_SEC, PULSEGUARD_VERSION, PULSEGUARD_SOURCE } from './pulseguard/constants';
 import { PulseGuardIndicator } from './components/PulseGuardIndicator';
 import { useI18n } from './i18n/I18nContext';
+
+function extractTokenFromUrl(): string {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('token') || '';
+  } catch {
+    return '';
+  }
+}
 
 export default function PulseGuardApp() {
   const { t, toggleLocale } = useI18n();
   const [state, dispatch] = useReducer(pulseguardReducer, initialPulseGuardState);
   const continuousSignals = useContinuousSignals();
-  const { start: csStart, stop: csStop, isCollecting: csIsCollecting } = continuousSignals;
-  const [sessionId, setSessionId] = useState('');
+  const { start: csStart, stop: csStop } = continuousSignals;
 
-  // Refs for interval/timeout management
-  const snapshotIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const backgroundTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Refs for timer management
+  const checkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const captureTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startedAtRef = useRef<string>('');
-  const sessionPublicIdRef = useRef<string>('');
+  const linkTokenRef = useRef<string>('');
+  const checkFrequencyRef = useRef<number>(PULSEGUARD_FALLBACK_CHECK_FREQUENCY_MS);
+  const captureWindowRef = useRef<number>(PULSEGUARD_FALLBACK_CAPTURE_WINDOW_SEC);
+  const isCheckingRef = useRef<boolean>(false);
+
+  // ─── Extract token and fetch config on mount ─────────────────────
+
+  useEffect(() => {
+    const token = extractTokenFromUrl();
+    if (!token) {
+      dispatch({ type: 'CONFIG_ERROR', error: 'missing' });
+      return;
+    }
+    linkTokenRef.current = token;
+
+    let cancelled = false;
+
+    fetchLinkConfig(token)
+      .then((config) => {
+        if (cancelled) return;
+        checkFrequencyRef.current = config.checkFrequencyMs;
+        captureWindowRef.current = config.captureWindowSec;
+        dispatch({
+          type: 'CONFIG_LOADED',
+          linkToken: token,
+          checkFrequencyMs: config.checkFrequencyMs,
+          captureWindowSec: config.captureWindowSec,
+        });
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        const isApiError = (e: unknown): e is PulseGuardApiError =>
+          e instanceof Error && e.name === 'PulseGuardApiError';
+        const errorType = isApiError(err) && err.status === 401 ? 'expired' : 'network';
+        dispatch({ type: 'CONFIG_ERROR', error: errorType });
+      });
+
+    return () => { cancelled = true; };
+  }, []);
 
   // ─── Visibility / background management ───────────────────────────
 
   useEffect(() => {
-    if (state.phase !== 'active') return;
-
     const onVisibilityChange = () => {
       if (document.hidden) {
         dispatch({ type: 'BACKGROUND_ENTER' });
-        // Start countdown to auto-end session
-        backgroundTimeoutRef.current = setTimeout(() => {
-          // Auto-end: stop collectors and transition to 'ended'
+        // If a check is in progress, cancel it
+        if (isCheckingRef.current) {
           csStop();
-          if (snapshotIntervalRef.current) {
-            clearInterval(snapshotIntervalRef.current);
-            snapshotIntervalRef.current = null;
+          if (captureTimerRef.current) {
+            clearTimeout(captureTimerRef.current);
+            captureTimerRef.current = null;
           }
-          dispatch({ type: 'END', reason: 'background' });
-        }, PULSEGUARD_BACKGROUND_TIMEOUT_MS);
+          isCheckingRef.current = false;
+          dispatch({ type: 'CHECK_CANCELLED' });
+        }
       } else {
         dispatch({ type: 'BACKGROUND_EXIT' });
-        // Cancel auto-end countdown
-        if (backgroundTimeoutRef.current) {
-          clearTimeout(backgroundTimeoutRef.current);
-          backgroundTimeoutRef.current = null;
-        }
       }
     };
 
     document.addEventListener('visibilitychange', onVisibilityChange);
     return () => {
       document.removeEventListener('visibilitychange', onVisibilityChange);
-      if (backgroundTimeoutRef.current) {
-        clearTimeout(backgroundTimeoutRef.current);
-        backgroundTimeoutRef.current = null;
-      }
     };
-  }, [state.phase, csStop]);
+  }, [csStop]);
 
-  // ─── Periodic snapshot submission ─────────────────────────────────
+  // ─── Check cycle: waiting → checking → waiting ───────────────────
 
-  const sendSnapshot = useCallback(async () => {
-    if (sessionPublicIdRef.current === '') return;
+  const runCheck = useCallback(async () => {
+    if (isCheckingRef.current) return;
+    if (document.hidden) return;
 
-    // Stop collectors to get accumulated signals, then immediately restart
+    isCheckingRef.current = true;
+    dispatch({ type: 'START_CHECK' });
+    startedAtRef.current = new Date().toISOString();
+
+    // Start collectors
+    await csStart({ motion: 'prompt', orientation: 'prompt' });
+
+    // Wait for capture window duration
+    const captureMs = captureWindowRef.current * 1000;
+
+    await new Promise<void>((resolve) => {
+      captureTimerRef.current = setTimeout(() => {
+        captureTimerRef.current = null;
+        resolve();
+      }, captureMs);
+    });
+
+    // If backgrounded during capture, the visibility handler already
+    // stopped collectors and set isCheckingRef to false — abort.
+    if (!isCheckingRef.current) return;
+
+    // Stop collectors and get signals
     const signals = csStop();
+    isCheckingRef.current = false;
 
-    // Restart collectors for next interval (unless we're ending)
-    if (!csIsCollecting()) {
-      // Already stopped — restart for next window
-      csStart({ motion: 'granted', orientation: 'granted' }).catch(() => {});
-    }
-
+    // Build and send snapshot
     const payload: PulseGuardSnapshotPayload = {
-      hcs_session_public_id: sessionPublicIdRef.current,
+      hcs_session_public_id: `pg_${linkTokenRef.current.slice(-12)}`,
       source: PULSEGUARD_SOURCE,
+      link_token: linkTokenRef.current,
       pulse_guard: {
         version: PULSEGUARD_VERSION,
         snapshot_at: new Date().toISOString(),
@@ -98,85 +154,36 @@ export default function PulseGuardApp() {
 
     try {
       await submitPulseGuardSnapshot(payload);
-      dispatch({ type: 'SNAPSHOT_SENT' });
+      dispatch({ type: 'CHECK_SENT' });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Snapshot submission failed';
-      console.error('[PulseGuard] Snapshot error:', msg);
-      dispatch({ type: 'SNAPSHOT_ERROR', error: msg });
+      const msg = err instanceof Error ? err.message : 'Check submission failed';
+      console.error('[PulseGuard] Check error:', msg);
+      dispatch({ type: 'CHECK_ERROR', error: msg });
     }
-  }, [csStop, csIsCollecting, csStart]);
+  }, [csStart, csStop]);
 
-  // Start/stop the periodic interval when phase changes
+  // Schedule checks when in waiting phase
   useEffect(() => {
-    if (state.phase === 'active') {
-      snapshotIntervalRef.current = setInterval(() => {
-        sendSnapshot();
-      }, PULSEGUARD_SNAPSHOT_INTERVAL_MS);
+    if (state.phase !== 'waiting') return;
 
-      return () => {
-        if (snapshotIntervalRef.current) {
-          clearInterval(snapshotIntervalRef.current);
-          snapshotIntervalRef.current = null;
-        }
-      };
-    }
-  }, [state.phase, sendSnapshot]);
+    // Schedule next check
+    checkTimerRef.current = setTimeout(() => {
+      runCheck();
+    }, checkFrequencyRef.current);
 
-  // ─── Session lifecycle handlers ───────────────────────────────────
-
-  const handleStart = useCallback(async () => {
-    const id = sessionId.trim() || `pg_${Date.now().toString(36)}`;
-    sessionPublicIdRef.current = id;
-    startedAtRef.current = new Date().toISOString();
-
-    await csStart({ motion: 'prompt', orientation: 'prompt' });
-    dispatch({ type: 'START', sessionPublicId: id });
-  }, [csStart, sessionId]);
-
-  const handleStop = useCallback(() => {
-    // Final snapshot before ending
-    const signals = csStop();
-
-    if (snapshotIntervalRef.current) {
-      clearInterval(snapshotIntervalRef.current);
-      snapshotIntervalRef.current = null;
-    }
-    if (backgroundTimeoutRef.current) {
-      clearTimeout(backgroundTimeoutRef.current);
-      backgroundTimeoutRef.current = null;
-    }
-
-    // Send final snapshot (fire-and-forget — session is ending)
-    if (sessionPublicIdRef.current) {
-      const payload: PulseGuardSnapshotPayload = {
-        hcs_session_public_id: sessionPublicIdRef.current,
-        source: PULSEGUARD_SOURCE,
-        pulse_guard: {
-          version: PULSEGUARD_VERSION,
-          snapshot_at: new Date().toISOString(),
-          started_at: startedAtRef.current,
-          signals,
-        },
-      };
-      submitPulseGuardSnapshot(payload).catch((err) => {
-        console.error('[PulseGuard] Final snapshot error:', err);
-      });
-    }
-
-    dispatch({ type: 'END', reason: 'user' });
-  }, [csStop]);
-
-  const handleReset = useCallback(() => {
-    sessionPublicIdRef.current = '';
-    startedAtRef.current = '';
-    dispatch({ type: 'RESET' });
-  }, []);
+    return () => {
+      if (checkTimerRef.current) {
+        clearTimeout(checkTimerRef.current);
+        checkTimerRef.current = null;
+      }
+    };
+  }, [state.phase, state.checksSent, runCheck]);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (snapshotIntervalRef.current) clearInterval(snapshotIntervalRef.current);
-      if (backgroundTimeoutRef.current) clearTimeout(backgroundTimeoutRef.current);
+      if (checkTimerRef.current) clearTimeout(checkTimerRef.current);
+      if (captureTimerRef.current) clearTimeout(captureTimerRef.current);
     };
   }, []);
 
@@ -205,99 +212,56 @@ export default function PulseGuardApp() {
         {t('app.langSwitch')}
       </button>
 
-      {/* ─── IDLE ─── */}
-      {state.phase === 'idle' && (
+      {/* ─── LOADING ─── */}
+      {state.phase === 'loading' && (
         <div className="screen-center">
           <div style={{ fontSize: 48 }}>🫀</div>
           <h1>{t('pulseguard.title')}</h1>
-          <p className="muted">{t('pulseguard.subtitle')}</p>
-          <input
-            type="text"
-            placeholder={t('pulseguard.sessionPlaceholder')}
-            value={sessionId}
-            onChange={(e) => setSessionId(e.target.value)}
-            style={{
-              width: '100%',
-              padding: '12px 16px',
-              borderRadius: 'var(--radius)',
-              border: '1px solid var(--surface-2)',
-              background: 'var(--surface)',
-              color: 'var(--text)',
-              fontSize: '16px',
-              minHeight: '48px',
-            }}
-          />
-          <button className="btn" onClick={handleStart}>
-            {t('pulseguard.startSession')}
-          </button>
+          <p className="muted">{t('pulseguard.loadingConfig')}</p>
         </div>
       )}
 
-      {/* ─── ACTIVE ─── */}
-      {state.phase === 'active' && (
+      {/* ─── LINK_INVALID ─── */}
+      {state.phase === 'link_invalid' && (
+        <div className="screen-center">
+          <div style={{ fontSize: 48 }}>⚠️</div>
+          <h1>{t('pulseguard.linkInvalidTitle')}</h1>
+          <p className="muted">
+            {state.linkError === 'expired'
+              ? t('pulseguard.linkExpired')
+              : state.linkError === 'missing'
+                ? t('pulseguard.linkMissing')
+                : t('pulseguard.linkNetworkError')}
+          </p>
+        </div>
+      )}
+
+      {/* ─── WAITING / CHECKING ─── */}
+      {(state.phase === 'waiting' || state.phase === 'checking') && (
         <>
           <div className="screen-center" style={{ paddingBottom: '80px' }}>
             <div style={{ fontSize: 48 }}>🫀</div>
-            <h1>{t('pulseguard.monitoringActive')}</h1>
-            <p className="muted">{t('pulseguard.sessionActiveFor')}</p>
+            <h1>
+              {state.phase === 'checking'
+                ? t('pulseguard.checkInProgress')
+                : t('pulseguard.waitingNextCheck')}
+            </h1>
+            <p className="muted">{t('pulseguard.periodicMonitoring')}</p>
             <div style={{ marginTop: '24px', display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center' }}>
               <div style={{ fontSize: '14px', color: 'var(--text-secondary, #888)' }}>
-                {t('pulseguard.snapshotsSent')}: {state.snapshotsSent}
+                {t('pulseguard.checksSent')}: {state.checksSent}
               </div>
-              {state.isBackgrounded && (
-                <div style={{ fontSize: '13px', color: '#f59e0b' }}>
-                  {t('pulseguard.backgroundWarning')}
-                </div>
-              )}
               {state.lastSubmitError && (
                 <div style={{ fontSize: '13px', color: '#ef4444' }}>
                   {t('pulseguard.lastError')}: {state.lastSubmitError}
                 </div>
               )}
-              <button
-                className="btn"
-                onClick={handleStop}
-                style={{
-                  background: '#dc2626',
-                  borderColor: '#dc2626',
-                  marginTop: '16px',
-                }}
-              >
-                {t('pulseguard.stopSession')}
-              </button>
             </div>
           </div>
 
-          {/* Permanent transparency indicator — always visible during active session */}
-          <PulseGuardIndicator />
+          {/* Permanent transparency indicator — phase-aware */}
+          <PulseGuardIndicator phase={state.phase} />
         </>
-      )}
-
-      {/* ─── ENDED ─── */}
-      {state.phase === 'ended' && (
-        <div className="screen-center">
-          <div style={{ fontSize: 48 }}>
-            {state.endReason === 'background' ? '⏱️' : '✅'}
-          </div>
-          <h1>{t('pulseguard.sessionEnded')}</h1>
-          <p className="muted">
-            {state.endReason === 'background'
-              ? t('pulseguard.endedBackground')
-              : t('pulseguard.endedUser')}
-          </p>
-          <div style={{ marginTop: '16px', fontSize: '14px', color: 'var(--text-secondary, #888)' }}>
-            {t('pulseguard.snapshotsSent')}: {state.snapshotsSent}
-          </div>
-          <div style={{ marginTop: '4px', fontSize: '13px', color: 'var(--text-secondary, #888)' }}>
-            {t('pulseguard.startedAt')}: {state.startedAt ? new Date(state.startedAt).toLocaleTimeString() : '—'}
-          </div>
-          <div style={{ fontSize: '13px', color: 'var(--text-secondary, #888)' }}>
-            {t('pulseguard.endedAt')}: {state.endedAt ? new Date(state.endedAt).toLocaleTimeString() : '—'}
-          </div>
-          <button className="btn" onClick={handleReset} style={{ marginTop: '24px' }}>
-            {t('pulseguard.newSession')}
-          </button>
-        </div>
       )}
     </div>
   );

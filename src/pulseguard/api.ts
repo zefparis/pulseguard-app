@@ -1,23 +1,27 @@
 /**
  * PulseGuard — API client
  *
- * Submits periodic signal snapshots to the backend.
+ * Submits periodic signal snapshots to the backend and fetches link
+ * configuration from a signed token.
+ *
  * Pattern follows demoguard/api.ts: fetch with AbortController timeout,
  * typed errors, no PII in logs.
- *
- * The endpoint /api/pulseguard/signals does NOT exist yet on the backend —
- * this is client-side only for now. Errors are non-fatal: the session
- * continues even if submission fails.
  *
  * @copyright (c) 2026 Benjamin BARRERE / IA SOLUTION
  * Patents Pending FR2514274 | FR2514546
  */
 
-import { PULSEGUARD_API_PATH, PULSEGUARD_REQUEST_TIMEOUT_MS, PULSEGUARD_SOURCE } from './constants';
+import {
+  PULSEGUARD_API_PATH,
+  PULSEGUARD_LINK_CONFIG_PATH,
+  PULSEGUARD_REQUEST_TIMEOUT_MS,
+  PULSEGUARD_SOURCE,
+} from './constants';
 
 export interface PulseGuardSnapshotPayload {
   hcs_session_public_id: string;
   source: typeof PULSEGUARD_SOURCE;
+  link_token: string;
   pulse_guard: {
     version: string;
     snapshot_at: string;
@@ -31,6 +35,12 @@ export interface PulseGuardSnapshotResponse {
   received: boolean;
   snapshot_seq?: number;
   message?: string;
+}
+
+export interface PulseGuardLinkConfig {
+  ok: boolean;
+  checkFrequencyMs: number;
+  captureWindowSec: number;
 }
 
 export class PulseGuardApiError extends Error {
@@ -53,7 +63,10 @@ export async function submitPulseGuardSnapshot(
   try {
     const res = await fetch(PULSEGUARD_API_PATH, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': import.meta.env.VITE_PULSEGUARD_API_KEY || '',
+      },
       body: JSON.stringify(payload),
       signal: controller.signal,
     });
@@ -72,6 +85,41 @@ export async function submitPulseGuardSnapshot(
     }
 
     return res.json() as Promise<PulseGuardSnapshotResponse>;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function fetchLinkConfig(
+  token: string,
+): Promise<PulseGuardLinkConfig> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), PULSEGUARD_REQUEST_TIMEOUT_MS);
+
+  try {
+    const url = `${PULSEGUARD_LINK_CONFIG_PATH}?token=${encodeURIComponent(token)}`;
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'x-api-key': import.meta.env.VITE_PULSEGUARD_API_KEY || '',
+      },
+      signal: controller.signal,
+    });
+
+    if (!res.ok) {
+      let code = 'HTTP_ERROR';
+      let message = `Link config fetch failed: ${res.status}`;
+      try {
+        const body = (await res.json()) as { error?: string; message?: string };
+        if (body.error) code = body.error;
+        if (body.message) message = body.message;
+      } catch {
+        // body not JSON
+      }
+      throw new PulseGuardApiError(res.status, code, message);
+    }
+
+    return res.json() as Promise<PulseGuardLinkConfig>;
   } finally {
     clearTimeout(timer);
   }
