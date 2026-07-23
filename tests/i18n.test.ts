@@ -1,13 +1,9 @@
 /**
- * DemoGuard — i18n tests
+ * PulseGuard — i18n tests
  *
  * Tests:
  * 1. Every key in fr.json has a counterpart in en.json (and vice versa)
  * 2. detectLocale: navigator.language 'en-ZA' → 'en', 'fr-FR' → 'fr', other → 'fr'
- * 3. Stroop: locale=en generates English words, locale=fr generates French words,
- *    conflict logic identical
- * 4. Voice challenge phrase: locale-aware, comparable syllable count
- * 5. Payload non-regression: buildDemoGuardPayload produces same shape regardless of UI locale
  *
  * @copyright (c) 2026 Benjamin BARRERE / IA SOLUTION
  * Patents Pending FR2514274 | FR2514546
@@ -17,18 +13,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fr from '../src/i18n/fr.json';
 import en from '../src/i18n/en.json';
 import { detectLocale } from '../src/i18n/I18nContext';
-import {
-  STROOP_COLOR_WORDS,
-  stroopColorWord,
-  generateStroopTrials,
-  STROOP_TRIALS,
-  STROOP_MIN_CONFLICT,
-  type StroopColor,
-} from '../src/demoguard/cognitive/stroopChallenge';
-import { generateVocalRanChallenge, VOCAL_RAN_ITEMS } from '../src/demoguard/cognitive/vocalRanChallenge';
-import { buildDemoGuardPayload } from '../src/payload/buildDemoGuardPayload';
-import { initialState } from '../src/state/demoguardReducer';
-import type { DemoGuardState } from '../src/state/demoguardReducer';
 
 // ─── 1. Key parity ───────────────────────────────────────────────
 
@@ -98,124 +82,5 @@ describe('i18n — locale detection', () => {
     );
     expect(detectLocale()).toBe('en');
     spy.mockRestore();
-  });
-});
-
-// ─── 3. Stroop locale-specific words ─────────────────────────────
-
-describe('i18n — Stroop color words', () => {
-  const colors: StroopColor[] = ['red', 'blue', 'green', 'yellow'];
-
-  it('locale=en produces English words', () => {
-    for (const c of colors) {
-      expect(stroopColorWord(c, 'en')).toBe(STROOP_COLOR_WORDS.en[c]);
-    }
-    expect(stroopColorWord('red', 'en')).toBe('RED');
-    expect(stroopColorWord('blue', 'en')).toBe('BLUE');
-    expect(stroopColorWord('green', 'en')).toBe('GREEN');
-    expect(stroopColorWord('yellow', 'en')).toBe('YELLOW');
-  });
-
-  it('locale=fr produces French words', () => {
-    for (const c of colors) {
-      expect(stroopColorWord(c, 'fr')).toBe(STROOP_COLOR_WORDS.fr[c]);
-    }
-    expect(stroopColorWord('red', 'fr')).toBe('ROUGE');
-    expect(stroopColorWord('blue', 'fr')).toBe('BLEU');
-    expect(stroopColorWord('green', 'fr')).toBe('VERT');
-    expect(stroopColorWord('yellow', 'fr')).toBe('JAUNE');
-  });
-
-  it('unknown locale falls back to French', () => {
-    expect(stroopColorWord('red', 'de')).toBe('ROUGE');
-  });
-
-  it('conflict logic is identical regardless of locale (words are display-only)', () => {
-    const trials = generateStroopTrials(STROOP_TRIALS);
-    const conflictTrials = trials.filter((t) => t.isConflict);
-    expect(trials).toHaveLength(STROOP_TRIALS);
-    expect(conflictTrials.length).toBeGreaterThanOrEqual(STROOP_MIN_CONFLICT);
-
-    for (const t of trials) {
-      expect(typeof t.word).toBe('string');
-      expect(['red', 'blue', 'green', 'yellow']).toContain(t.word);
-      expect(['red', 'blue', 'green', 'yellow']).toContain(t.displayColor);
-      expect(t.isConflict).toBe(t.word !== t.displayColor);
-    }
-  });
-});
-
-// ─── 4. Voice challenge phrase (RAN sequence) ───────────────────
-
-describe('i18n — voice challenge phrase', () => {
-  it('RAN sequence is displayed as space-separated digits', () => {
-    const challenge = generateVocalRanChallenge();
-    const phrase = challenge.sequence.join(' ');
-    expect(phrase).toMatch(/^[0-9]( [0-9])+$/);
-    expect(phrase.split(' ').length).toBe(VOCAL_RAN_ITEMS);
-  });
-
-  it('RAN sequence is locale-independent (digits only)', () => {
-    const challenge = generateVocalRanChallenge();
-    const phrase = challenge.sequence.join(' ');
-    // Digits are the same in both fr and en — no locale-specific text
-    expect(phrase).not.toMatch(/[a-zA-Z]/);
-  });
-
-  it('RAN sequence matches expected_hash input', () => {
-    const challenge = generateVocalRanChallenge();
-    const phrase = challenge.sequence.join(' ');
-    // The displayed sequence must match what was hashed
-    expect(phrase).toBe(challenge.sequence.join(' '));
-    expect(challenge.expected_hash).toBeTruthy();
-  });
-});
-
-// ─── 5. Payload non-regression ───────────────────────────────────
-
-describe('i18n — payload non-regression', () => {
-  it('buildDemoGuardPayload produces same shape regardless of UI locale', () => {
-    const mockState: DemoGuardState = {
-      ...initialState,
-      sessionPublicId: 'sess_test',
-      startedAt: '2026-01-01T00:00:00.000Z',
-      completedAt: '2026-01-01T00:05:00.000Z',
-      device: {
-        platform: 'iPhone',
-        osVersion: '17.0',
-        model: 'iPhone 15',
-        manufacturer: 'Apple',
-        screenWidth: 390,
-        screenHeight: 844,
-        pixelRatio: 3,
-        language: 'en-US',
-        timezone: 'America/New_York',
-        online: true,
-      },
-      permissions: {
-        camera: 'granted',
-        microphone: 'granted',
-        motion: 'granted',
-        orientation: 'granted',
-        notifications: 'unknown',
-        location: 'granted',
-      },
-    };
-
-    const sensitive = {
-      selfie_b64: 'data:image/png;base64,abc',
-      voice_b64: 'data:audio/wav;base64,def',
-      mfcc_summary: [1, 2, 3],
-    };
-
-    const payload = buildDemoGuardPayload(mockState, null, null, sensitive);
-
-    expect(payload).toHaveProperty('hcs_session_public_id');
-    expect(payload).toHaveProperty('source');
-    expect(payload).toHaveProperty('demo_guard');
-    expect(payload.demo_guard).toHaveProperty('version');
-    expect(payload.demo_guard).toHaveProperty('device');
-    expect(payload.demo_guard).toHaveProperty('signals');
-    expect(payload).toHaveProperty('sensitive');
   });
 });

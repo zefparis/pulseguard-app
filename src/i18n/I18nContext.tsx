@@ -1,5 +1,5 @@
 /**
- * DemoGuard — I18n Context (fr/en)
+ * PulseGuard — I18n Context (fr/en)
  *
  * Homemade i18n: context + JSON dictionaries.
  * Detects locale from navigator.language, fallback fr.
