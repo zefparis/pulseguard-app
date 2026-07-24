@@ -8,6 +8,7 @@
   "pulseguard.linkMissing": "Invalid or missing link — contact your manager.",
   "pulseguard.linkExpired": "This link has expired — ask your manager for a new link.",
   "pulseguard.linkNetworkError": "Unable to load configuration. Please check your connection and reload.",
+  "pulseguard.linkRevoked": "This link has been revoked by your manager. Please contact your manager for assistance.",
   "pulseguard.waitingNextCheck": "Waiting for next check",
   "pulseguard.checkInProgress": "Check in progress",
   "pulseguard.periodicMonitoring": "Periodic human-state monitoring",

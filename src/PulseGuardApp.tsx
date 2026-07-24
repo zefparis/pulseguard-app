@@ -77,7 +77,9 @@ export default function PulseGuardApp() {
         if (cancelled) return;
         const isApiError = (e: unknown): e is PulseGuardApiError =>
           e instanceof Error && e.name === 'PulseGuardApiError';
-        const errorType = isApiError(err) && err.status === 401 ? 'expired' : 'network';
+        const errorType = isApiError(err) && err.code === 'LINK_REVOKED'
+          ? 'revoked'
+          : isApiError(err) && err.status === 401 ? 'expired' : 'network';
         dispatch({ type: 'CONFIG_ERROR', error: errorType });
       });
 
@@ -167,6 +169,12 @@ export default function PulseGuardApp() {
       await submitPulseGuardSnapshot(payload);
       dispatch({ type: 'CHECK_SENT' });
     } catch (err) {
+      const isApiErr = (e: unknown): e is PulseGuardApiError =>
+        e instanceof Error && e.name === 'PulseGuardApiError';
+      if (isApiErr(err) && err.code === 'LINK_REVOKED') {
+        dispatch({ type: 'CONFIG_ERROR', error: 'revoked' });
+        return;
+      }
       const msg = err instanceof Error ? err.message : 'Check submission failed';
       console.error('[PulseGuard] Check error:', msg);
       dispatch({ type: 'CHECK_ERROR', error: msg });
@@ -238,11 +246,13 @@ export default function PulseGuardApp() {
           <div style={{ fontSize: 48 }}>⚠️</div>
           <h1>{t('pulseguard.linkInvalidTitle')}</h1>
           <p className="muted">
-            {state.linkError === 'expired'
-              ? t('pulseguard.linkExpired')
-              : state.linkError === 'missing'
-                ? t('pulseguard.linkMissing')
-                : t('pulseguard.linkNetworkError')}
+            {state.linkError === 'revoked'
+              ? t('pulseguard.linkRevoked')
+              : state.linkError === 'expired'
+                ? t('pulseguard.linkExpired')
+                : state.linkError === 'missing'
+                  ? t('pulseguard.linkMissing')
+                  : t('pulseguard.linkNetworkError')}
           </p>
         </div>
       )}

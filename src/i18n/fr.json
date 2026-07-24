@@ -8,6 +8,7 @@
   "pulseguard.linkMissing": "Lien invalide ou manquant — contactez votre responsable.",
   "pulseguard.linkExpired": "Ce lien a expiré — demandez un nouveau lien à votre responsable.",
   "pulseguard.linkNetworkError": "Impossible de charger la configuration. Vérifiez votre connexion et rechargez.",
+  "pulseguard.linkRevoked": "Ce lien a été révoqué par votre responsable. Veuillez contacter votre responsable pour obtenir de l'aide.",
   "pulseguard.waitingNextCheck": "En attente du prochain contrôle",
   "pulseguard.checkInProgress": "Contrôle en cours",
   "pulseguard.periodicMonitoring": "Surveillance périodique de l'état humain",
