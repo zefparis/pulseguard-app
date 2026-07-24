@@ -21,6 +21,7 @@ import { submitPulseGuardSnapshot, fetchLinkConfig, type PulseGuardSnapshotPaylo
 import { PULSEGUARD_FALLBACK_CHECK_FREQUENCY_MS, PULSEGUARD_FALLBACK_CAPTURE_WINDOW_SEC, PULSEGUARD_VERSION, PULSEGUARD_SOURCE } from './pulseguard/constants';
 import { PulseGuardIndicator } from './components/PulseGuardIndicator';
 import { PulseGuardEnrollment } from './components/PulseGuardEnrollment';
+import { computePulseGuardBehaviorSummary } from './pulseguard/behaviorSummary';
 import { useI18n } from './i18n/I18nContext';
 
 function extractTokenFromUrl(): string {
@@ -141,6 +142,11 @@ export default function PulseGuardApp() {
     const signals = csStop();
     isCheckingRef.current = false;
 
+    // Build behavior summary from touch/motion signals so the server-side
+    // mapPulseGuardToHumanStateInput can populate behaviorStatus and enable
+    // computeHumanState to evaluate the behavioral dimension.
+    const behaviorSummary = computePulseGuardBehaviorSummary(signals);
+
     // Build and send snapshot
     const payload: PulseGuardSnapshotPayload = {
       hcs_session_public_id: `pg_${linkTokenRef.current.slice(-12)}`,
@@ -150,7 +156,10 @@ export default function PulseGuardApp() {
         version: PULSEGUARD_VERSION,
         snapshot_at: new Date().toISOString(),
         started_at: startedAtRef.current,
-        signals,
+        signals: {
+          ...signals,
+          behavior: { summary: behaviorSummary },
+        },
       },
     };
 
