@@ -22,6 +22,7 @@ import { PULSEGUARD_FALLBACK_CHECK_FREQUENCY_MS, PULSEGUARD_FALLBACK_CAPTURE_WIN
 import { PulseGuardIndicator } from './components/PulseGuardIndicator';
 import { PulseGuardEnrollment } from './components/PulseGuardEnrollment';
 import { computePulseGuardBehaviorSummary } from './pulseguard/behaviorSummary';
+import { computeDeviceMotionState } from './pulseguard/deviceMotionState';
 import { useI18n } from './i18n/I18nContext';
 
 function extractTokenFromUrl(): string {
@@ -47,6 +48,7 @@ export default function PulseGuardApp() {
   const checkFrequencyRef = useRef<number>(PULSEGUARD_FALLBACK_CHECK_FREQUENCY_MS);
   const captureWindowRef = useRef<number>(PULSEGUARD_FALLBACK_CAPTURE_WINDOW_SEC);
   const isCheckingRef = useRef<boolean>(false);
+  const lastCheckSentAtRef = useRef<number>(0);
 
   // ─── Extract token and fetch config on mount ─────────────────────
 
@@ -86,6 +88,9 @@ export default function PulseGuardApp() {
     return () => { cancelled = true; };
   }, []);
 
+  // Ref to runCheck for use in the visibility handler (declared early, assigned after runCheck is defined)
+  const runCheckRef = useRef<(() => Promise<void>) | null>(null);
+
   // ─── Visibility / background management ───────────────────────────
 
   useEffect(() => {
@@ -104,6 +109,15 @@ export default function PulseGuardApp() {
         }
       } else {
         dispatch({ type: 'BACKGROUND_EXIT' });
+        // On foreground return: if the time since the last check exceeds the
+        // configured frequency, trigger an immediate check to catch up.
+        // Mobile browsers suspend JS in background, so setTimeout-based
+        // scheduling doesn't fire while the app is hidden. This ensures we
+        // rattrap the missed checks as soon as the user reopens the app.
+        const elapsed = Date.now() - lastCheckSentAtRef.current;
+        if (lastCheckSentAtRef.current > 0 && elapsed >= checkFrequencyRef.current && runCheckRef.current) {
+          runCheckRef.current();
+        }
       }
     };
 
@@ -149,6 +163,11 @@ export default function PulseGuardApp() {
     // computeHumanState to evaluate the behavioral dimension.
     const behaviorSummary = computePulseGuardBehaviorSummary(signals);
 
+    // Device motion state — INFORMATIONAL ONLY, completely separate from scoring.
+    // Derived from the same motion collector output but stored as a distinct field.
+    // NEVER enters computeHumanState / HumanStateInput / motorConfidence.
+    const deviceMotionState = computeDeviceMotionState(signals.motion ?? undefined);
+
     // Build and send snapshot
     const payload: PulseGuardSnapshotPayload = {
       hcs_session_public_id: `pg_${linkTokenRef.current.slice(-12)}`,
@@ -162,12 +181,15 @@ export default function PulseGuardApp() {
           ...signals,
           behavior: { summary: behaviorSummary },
         },
+        // Informational-only — separate from scoring pipeline
+        device_motion_state: deviceMotionState,
       },
     };
 
     try {
       await submitPulseGuardSnapshot(payload);
       dispatch({ type: 'CHECK_SENT' });
+      lastCheckSentAtRef.current = Date.now();
     } catch (err) {
       const isApiErr = (e: unknown): e is PulseGuardApiError =>
         e instanceof Error && e.name === 'PulseGuardApiError';
@@ -180,6 +202,9 @@ export default function PulseGuardApp() {
       dispatch({ type: 'CHECK_ERROR', error: msg });
     }
   }, [csStart, csStop]);
+
+  // Keep runCheckRef in sync so the visibility handler always calls the latest version
+  runCheckRef.current = runCheck;
 
   // Schedule checks when in waiting phase
   useEffect(() => {

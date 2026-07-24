@@ -29,6 +29,12 @@ export interface PulseGuardSnapshotPayload {
     snapshot_at: string;
     started_at: string;
     signals: Record<string, unknown>;
+    /**
+     * Informational-only device motion state ('stationary' | 'carried' | 'unknown').
+     * COMPLETELY SEPARATE from scoring — never enters computeHumanState / HumanStateInput.
+     * Exists for manager display and future Brain ML raw-data learning.
+     */
+    device_motion_state?: 'stationary' | 'carried' | 'unknown';
   };
 }
 
