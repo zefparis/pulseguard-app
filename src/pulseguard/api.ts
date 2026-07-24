@@ -15,6 +15,7 @@ import {
   PULSEGUARD_API_PATH,
   PULSEGUARD_LINK_CONFIG_PATH,
   PULSEGUARD_ENROLLMENT_PATH,
+  PULSEGUARD_ENROLLMENT_TEST_PROGRESS_PATH,
   PULSEGUARD_REQUEST_TIMEOUT_MS,
   PULSEGUARD_SOURCE,
 } from './constants';
@@ -125,6 +126,23 @@ export async function submitPulseGuardSnapshot(
   }
 }
 
+export interface PulseGuardTestProgressPayload {
+  hcs_session_public_id: string;
+  link_token: string;
+  source: typeof PULSEGUARD_SOURCE;
+  test_name: string;
+  test_index: number;
+  total_tests: number;
+  quality: string;
+  qualitative_summary: string;
+}
+
+export interface PulseGuardTestProgressResponse {
+  ok: boolean;
+  received: boolean;
+  message?: string;
+}
+
 export async function submitPulseGuardEnrollment(
   payload: PulseGuardEnrollmentPayload,
 ): Promise<PulseGuardEnrollmentResponse> {
@@ -156,6 +174,40 @@ export async function submitPulseGuardEnrollment(
     }
 
     return res.json() as Promise<PulseGuardEnrollmentResponse>;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function submitPulseGuardTestProgress(
+  payload: PulseGuardTestProgressPayload,
+): Promise<void> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), PULSEGUARD_REQUEST_TIMEOUT_MS);
+
+  try {
+    const res = await fetch(PULSEGUARD_ENROLLMENT_TEST_PROGRESS_PATH, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': import.meta.env.VITE_PULSEGUARD_API_KEY || '',
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+
+    if (!res.ok) {
+      let code = 'HTTP_ERROR';
+      let message = `Test progress submission failed: ${res.status}`;
+      try {
+        const body = (await res.json()) as { error?: string; message?: string };
+        if (body.error) code = body.error;
+        if (body.message) message = body.message;
+      } catch {
+        // body not JSON
+      }
+      throw new PulseGuardApiError(res.status, code, message);
+    }
   } finally {
     clearTimeout(timer);
   }

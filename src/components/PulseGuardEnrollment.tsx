@@ -15,6 +15,7 @@ import { BehaviorSession } from '../demoguard/behavior/behaviorSession';
 import { computeCognitiveSummary } from '../demoguard/cognitive/cognitiveScoring';
 import type {
   CognitiveSignals,
+  CognitiveQuality,
   ReflexSignal,
   StroopSignal,
   DigitSpanSignal,
@@ -28,10 +29,83 @@ import { DigitSpanScreen } from '../screens/DigitSpanScreen';
 import { NBackScreen } from '../screens/NBackScreen';
 import { TrailTapScreen } from '../screens/TrailTapScreen';
 import { VoiceScreen } from '../screens/VoiceScreen';
-import { submitPulseGuardEnrollment, type PulseGuardEnrollmentPayload, type PulseGuardApiError } from '../pulseguard/api';
+import { submitPulseGuardEnrollment, submitPulseGuardTestProgress, type PulseGuardEnrollmentPayload, type PulseGuardApiError, type PulseGuardTestProgressPayload } from '../pulseguard/api';
 import { PULSEGUARD_SOURCE } from '../pulseguard/constants';
 import { useI18n } from '../i18n/I18nContext';
 import type { DemoGuardVoiceSignal, VoiceDiagnosticsSafe } from '../demoguard/types';
+
+// ─── Per-test qualitative summaries (no raw data, safe for SSE) ───────
+
+const TEST_ORDER = ['reflex', 'stroop', 'digit_span', 'n_back', 'trail_tap', 'vocal_ran'] as const;
+const TOTAL_TESTS = TEST_ORDER.length;
+
+function summarizeReflex(s: ReflexSignal): string {
+  if (s.avg_ms < 250) return 'fast_reactions';
+  if (s.avg_ms <= 400) return 'normal_reactions';
+  return 'slow_reactions';
+}
+
+function summarizeStroop(s: StroopSignal): string {
+  if (s.accuracy > 0.8) return 'good_concentration';
+  if (s.accuracy >= 0.5) return 'average_concentration';
+  return 'concentration_difficulties';
+}
+
+function summarizeDigitSpan(s: DigitSpanSignal): string {
+  if (s.max_span >= 7) return 'good_memory';
+  if (s.max_span >= 5) return 'average_memory';
+  return 'memory_difficulties';
+}
+
+function summarizeNBack(s: NBackSignal): string {
+  if (s.accuracy > 0.8) return 'good_attention';
+  if (s.accuracy >= 0.5) return 'average_attention';
+  return 'attention_difficulties';
+}
+
+function summarizeTrailTap(s: TrailTapSignal): string {
+  if (s.completion_ms < 15000) return 'fluid_execution';
+  if (s.completion_ms <= 25000) return 'average_execution';
+  return 'slow_execution';
+}
+
+function summarizeVocalRan(s: VocalRanSignal): string {
+  if (s.quality === 'ok') return 'clear_voice';
+  if (s.quality === 'review') return 'voice_to_verify';
+  return 'voice_issue';
+}
+
+function buildTestProgressPayload(
+  testName: typeof TEST_ORDER[number],
+  testIndex: number,
+  quality: CognitiveQuality,
+  qualitativeSummary: string,
+  linkToken: string,
+): PulseGuardTestProgressPayload {
+  return {
+    hcs_session_public_id: `pg_${linkToken.slice(-12)}`,
+    link_token: linkToken,
+    source: PULSEGUARD_SOURCE,
+    test_name: testName,
+    test_index: testIndex,
+    total_tests: TOTAL_TESTS,
+    quality,
+    qualitative_summary: qualitativeSummary,
+  };
+}
+
+function sendTestProgress(
+  testName: typeof TEST_ORDER[number],
+  testIndex: number,
+  quality: CognitiveQuality,
+  qualitativeSummary: string,
+  linkToken: string,
+): void {
+  const payload = buildTestProgressPayload(testName, testIndex, quality, qualitativeSummary, linkToken);
+  void submitPulseGuardTestProgress(payload).catch((err) => {
+    console.warn(`[PULSEGUARD_ENROLLMENT] test progress failed for ${testName} (suppressed):`, err instanceof Error ? err.message : String(err));
+  });
+}
 
 type EnrollmentPhase =
   | 'intro'
@@ -133,26 +207,31 @@ export function PulseGuardEnrollment({ linkToken, onComplete }: Props) {
 
   const onReflexComplete = (signal: ReflexSignal) => {
     signalsRef.current.reflex = signal;
+    sendTestProgress('reflex', 1, signal.quality, summarizeReflex(signal), linkToken);
     setPhase('stroop');
   };
 
   const onStroopComplete = (signal: StroopSignal) => {
     signalsRef.current.stroop = signal;
+    sendTestProgress('stroop', 2, signal.quality, summarizeStroop(signal), linkToken);
     setPhase('digit_span');
   };
 
   const onDigitSpanComplete = (signal: DigitSpanSignal) => {
     signalsRef.current.digit_span = signal;
+    sendTestProgress('digit_span', 3, signal.quality, summarizeDigitSpan(signal), linkToken);
     setPhase('n_back');
   };
 
   const onNBackComplete = (signal: NBackSignal) => {
     signalsRef.current.n_back = signal;
+    sendTestProgress('n_back', 4, signal.quality, summarizeNBack(signal), linkToken);
     setPhase('trail_tap');
   };
 
   const onTrailTapComplete = (signal: TrailTapSignal) => {
     signalsRef.current.trail_tap = signal;
+    sendTestProgress('trail_tap', 5, signal.quality, summarizeTrailTap(signal), linkToken);
     setPhase('vocal_ran');
   };
 
@@ -164,6 +243,7 @@ export function PulseGuardEnrollment({ linkToken, onComplete }: Props) {
     voiceMimetype: string | null,
   ) => {
     signalsRef.current.vocal_ran = vocalRan;
+    sendTestProgress('vocal_ran', 6, vocalRan.quality, summarizeVocalRan(vocalRan), linkToken);
     voiceDiagnosticsRef.current = diagnostic;
     voiceB64Ref.current = voiceB64;
     voiceMimetypeRef.current = voiceMimetype;

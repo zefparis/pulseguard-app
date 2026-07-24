@@ -31,5 +31,8 @@ export const PULSEGUARD_VERSION = '1.0.0';
 /** API endpoint for submitting cognitive enrollment data. */
 export const PULSEGUARD_ENROLLMENT_PATH = '/api/pulseguard/enrollment';
 
+/** API endpoint for publishing per-test enrollment progress events. */
+export const PULSEGUARD_ENROLLMENT_TEST_PROGRESS_PATH = '/api/pulseguard/enrollment/test-progress';
+
 /** Source identifier sent in payloads. */
 export const PULSEGUARD_SOURCE = 'pulseguard_mobile' as const;
