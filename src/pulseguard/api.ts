@@ -14,6 +14,7 @@
 import {
   PULSEGUARD_API_PATH,
   PULSEGUARD_LINK_CONFIG_PATH,
+  PULSEGUARD_ENROLLMENT_PATH,
   PULSEGUARD_REQUEST_TIMEOUT_MS,
   PULSEGUARD_SOURCE,
 } from './constants';
@@ -41,6 +42,40 @@ export interface PulseGuardLinkConfig {
   ok: boolean;
   checkFrequencyMs: number;
   captureWindowSec: number;
+  cognitiveEnrollmentRequired?: boolean;
+}
+
+export interface PulseGuardEnrollmentPayload {
+  hcs_session_public_id: string;
+  link_token: string;
+  source: typeof PULSEGUARD_SOURCE;
+  cognitive_signals: {
+    reflex: unknown;
+    stroop: unknown;
+    digit_span: unknown;
+    n_back: unknown;
+    trail_tap: unknown;
+    vocal_ran: unknown;
+    summary: unknown;
+  };
+  behavior: {
+    taskBehaviors: unknown;
+    summary: unknown;
+  };
+  touchDiagnosticsBehavior: unknown;
+  voice_diagnostics?: unknown;
+  sensitive?: {
+    voice_b64?: string;
+    voice_mimetype?: string;
+  };
+}
+
+export interface PulseGuardEnrollmentResponse {
+  ok: boolean;
+  received: boolean;
+  cognitiveStatus: 'passed' | 'review' | 'failed';
+  decisionCap: 'APPROVED' | 'REVIEW' | 'REJECTED';
+  message?: string;
 }
 
 export class PulseGuardApiError extends Error {
@@ -85,6 +120,42 @@ export async function submitPulseGuardSnapshot(
     }
 
     return res.json() as Promise<PulseGuardSnapshotResponse>;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function submitPulseGuardEnrollment(
+  payload: PulseGuardEnrollmentPayload,
+): Promise<PulseGuardEnrollmentResponse> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), PULSEGUARD_REQUEST_TIMEOUT_MS);
+
+  try {
+    const res = await fetch(PULSEGUARD_ENROLLMENT_PATH, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': import.meta.env.VITE_PULSEGUARD_API_KEY || '',
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+
+    if (!res.ok) {
+      let code = 'HTTP_ERROR';
+      let message = `Enrollment submission failed: ${res.status}`;
+      try {
+        const body = (await res.json()) as { error?: string; message?: string };
+        if (body.error) code = body.error;
+        if (body.message) message = body.message;
+      } catch {
+        // body not JSON
+      }
+      throw new PulseGuardApiError(res.status, code, message);
+    }
+
+    return res.json() as Promise<PulseGuardEnrollmentResponse>;
   } finally {
     clearTimeout(timer);
   }

@@ -15,7 +15,7 @@
  * Patents Pending FR2514274 | FR2514546
  */
 
-export type PulseGuardPhase = 'loading' | 'waiting' | 'checking' | 'link_invalid';
+export type PulseGuardPhase = 'loading' | 'waiting' | 'checking' | 'link_invalid' | 'enrollment' | 'enrollment_submitting';
 
 export interface PulseGuardState {
   phase: PulseGuardPhase;
@@ -33,6 +33,10 @@ export interface PulseGuardState {
   isBackgrounded: boolean;
   /** Error message when phase is link_invalid. */
   linkError: string | null;
+  /** Whether cognitive enrollment is required before periodic checks start. */
+  cognitiveEnrollmentRequired: boolean;
+  /** Error message when enrollment submission fails. */
+  enrollmentError: string | null;
 }
 
 export const initialPulseGuardState: PulseGuardState = {
@@ -44,17 +48,22 @@ export const initialPulseGuardState: PulseGuardState = {
   lastSubmitError: null,
   isBackgrounded: false,
   linkError: null,
+  cognitiveEnrollmentRequired: false,
+  enrollmentError: null,
 };
 
 export type PulseGuardAction =
-  | { type: 'CONFIG_LOADED'; linkToken: string; checkFrequencyMs: number; captureWindowSec: number }
+  | { type: 'CONFIG_LOADED'; linkToken: string; checkFrequencyMs: number; captureWindowSec: number; cognitiveEnrollmentRequired?: boolean }
   | { type: 'CONFIG_ERROR'; error: string }
   | { type: 'START_CHECK' }
   | { type: 'CHECK_SENT' }
   | { type: 'CHECK_ERROR'; error: string }
   | { type: 'BACKGROUND_ENTER' }
   | { type: 'BACKGROUND_EXIT' }
-  | { type: 'CHECK_CANCELLED' };
+  | { type: 'CHECK_CANCELLED' }
+  | { type: 'ENROLLMENT_SUBMITTING' }
+  | { type: 'ENROLLMENT_SUCCESS' }
+  | { type: 'ENROLLMENT_ERROR'; error: string };
 
 export function pulseguardReducer(
   state: PulseGuardState,
@@ -62,12 +71,14 @@ export function pulseguardReducer(
 ): PulseGuardState {
   switch (action.type) {
     case 'CONFIG_LOADED': {
+      const enrollmentRequired = action.cognitiveEnrollmentRequired ?? false;
       return {
         ...state,
-        phase: 'waiting',
+        phase: enrollmentRequired ? 'enrollment' : 'waiting',
         linkToken: action.linkToken,
         checkFrequencyMs: action.checkFrequencyMs,
         captureWindowSec: action.captureWindowSec,
+        cognitiveEnrollmentRequired: enrollmentRequired,
         linkError: null,
       };
     }
@@ -119,6 +130,19 @@ export function pulseguardReducer(
 
     case 'BACKGROUND_EXIT': {
       return { ...state, isBackgrounded: false };
+    }
+
+    case 'ENROLLMENT_SUBMITTING': {
+      if (state.phase !== 'enrollment') return state;
+      return { ...state, phase: 'enrollment_submitting', enrollmentError: null };
+    }
+
+    case 'ENROLLMENT_SUCCESS': {
+      return { ...state, phase: 'waiting', enrollmentError: null };
+    }
+
+    case 'ENROLLMENT_ERROR': {
+      return { ...state, phase: 'enrollment', enrollmentError: action.error };
     }
 
     default:

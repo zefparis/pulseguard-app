@@ -20,6 +20,7 @@ import { useContinuousSignals } from './hooks/useContinuousSignals';
 import { submitPulseGuardSnapshot, fetchLinkConfig, type PulseGuardSnapshotPayload, type PulseGuardApiError } from './pulseguard/api';
 import { PULSEGUARD_FALLBACK_CHECK_FREQUENCY_MS, PULSEGUARD_FALLBACK_CAPTURE_WINDOW_SEC, PULSEGUARD_VERSION, PULSEGUARD_SOURCE } from './pulseguard/constants';
 import { PulseGuardIndicator } from './components/PulseGuardIndicator';
+import { PulseGuardEnrollment } from './components/PulseGuardEnrollment';
 import { useI18n } from './i18n/I18nContext';
 
 function extractTokenFromUrl(): string {
@@ -68,6 +69,7 @@ export default function PulseGuardApp() {
           linkToken: token,
           checkFrequencyMs: config.checkFrequencyMs,
           captureWindowSec: config.captureWindowSec,
+          cognitiveEnrollmentRequired: config.cognitiveEnrollmentRequired,
         });
       })
       .catch((err: unknown) => {
@@ -234,6 +236,14 @@ export default function PulseGuardApp() {
                 : t('pulseguard.linkNetworkError')}
           </p>
         </div>
+      )}
+
+      {/* ─── ENROLLMENT ─── */}
+      {(state.phase === 'enrollment' || state.phase === 'enrollment_submitting') && (
+        <PulseGuardEnrollment
+          linkToken={linkTokenRef.current}
+          onComplete={() => dispatch({ type: 'ENROLLMENT_SUCCESS' })}
+        />
       )}
 
       {/* ─── WAITING / CHECKING ─── */}

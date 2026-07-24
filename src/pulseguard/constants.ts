@@ -28,5 +28,8 @@ export const PULSEGUARD_REQUEST_TIMEOUT_MS = 15_000;
 /** PulseGuard client version. */
 export const PULSEGUARD_VERSION = '1.0.0';
 
+/** API endpoint for submitting cognitive enrollment data. */
+export const PULSEGUARD_ENROLLMENT_PATH = '/api/pulseguard/enrollment';
+
 /** Source identifier sent in payloads. */
 export const PULSEGUARD_SOURCE = 'pulseguard_mobile' as const;
