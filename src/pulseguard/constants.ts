@@ -10,6 +10,15 @@
  * Patents Pending FR2514274 | FR2514546
  */
 
+/**
+ * Base URL for API calls. On web (Vercel), this is empty so all paths
+ * remain relative and are proxied via vercel.json rewrites.
+ * On Capacitor native (iOS/Android), the origin is https://localhost
+ * which has no server, so VITE_API_BASE_URL must be set to the
+ * hybrid-vector-api Render URL at build time.
+ */
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
+
 /** Fallback check frequency (milliseconds) if link-config fetch fails. Default: 5 minutes. */
 export const PULSEGUARD_FALLBACK_CHECK_FREQUENCY_MS = 5 * 60 * 1000;
 
@@ -17,10 +26,10 @@ export const PULSEGUARD_FALLBACK_CHECK_FREQUENCY_MS = 5 * 60 * 1000;
 export const PULSEGUARD_FALLBACK_CAPTURE_WINDOW_SEC = 30;
 
 /** API endpoint for submitting signal snapshots. */
-export const PULSEGUARD_API_PATH = '/api/pulseguard/signals';
+export const PULSEGUARD_API_PATH = `${API_BASE_URL}/api/pulseguard/signals`;
 
 /** API endpoint for fetching link configuration from token. */
-export const PULSEGUARD_LINK_CONFIG_PATH = '/api/pulseguard/link-config';
+export const PULSEGUARD_LINK_CONFIG_PATH = `${API_BASE_URL}/api/pulseguard/link-config`;
 
 /** Request timeout for snapshot submission (milliseconds). */
 export const PULSEGUARD_REQUEST_TIMEOUT_MS = 15_000;
@@ -29,10 +38,10 @@ export const PULSEGUARD_REQUEST_TIMEOUT_MS = 15_000;
 export const PULSEGUARD_VERSION = '1.0.0';
 
 /** API endpoint for submitting cognitive enrollment data. */
-export const PULSEGUARD_ENROLLMENT_PATH = '/api/pulseguard/enrollment';
+export const PULSEGUARD_ENROLLMENT_PATH = `${API_BASE_URL}/api/pulseguard/enrollment`;
 
 /** API endpoint for publishing per-test enrollment progress events. */
-export const PULSEGUARD_ENROLLMENT_TEST_PROGRESS_PATH = '/api/pulseguard/enrollment/test-progress';
+export const PULSEGUARD_ENROLLMENT_TEST_PROGRESS_PATH = `${API_BASE_URL}/api/pulseguard/enrollment/test-progress`;
 
 /** Source identifier sent in payloads. */
 export const PULSEGUARD_SOURCE = 'pulseguard_mobile' as const;

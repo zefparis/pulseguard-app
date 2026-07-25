@@ -121,5 +121,30 @@ significantly more reliable than Safari's web permission flow. The same
 `pulseguard-app` (Capacitor) without modification.
 
 ---
+
+## API Base URL for Native Builds
+
+On web (Vercel), API calls use relative URLs (`/api/...`) proxied via `vercel.json` rewrites.
+On Capacitor native, the origin is `https://localhost` which has no server, so API calls
+must use absolute URLs.
+
+A `.env.capacitor` file is provided with:
+```
+VITE_API_BASE_URL=https://hybrid-vector-api-m5xt.onrender.com
+```
+
+**Build for Capacitor (native):**
+```bash
+vite build --mode capacitor
+npx cap sync
+```
+
+**Build for web (Vercel):**
+```bash
+vite build
+```
+(No `VITE_API_BASE_URL` set — URLs stay relative, Vercel rewrites handle proxying.)
+
+---
 (c) 2026 Benjamin BARRERE / IA SOLUTION
 Patents Pending FR2514274 | FR2514546
