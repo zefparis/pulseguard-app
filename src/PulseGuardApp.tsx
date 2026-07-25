@@ -18,11 +18,12 @@ import { useReducer, useRef, useCallback, useEffect } from 'react';
 import { pulseguardReducer, initialPulseGuardState } from './state/pulseguardReducer';
 import { useContinuousSignals } from './hooks/useContinuousSignals';
 import { submitPulseGuardSnapshot, fetchLinkConfig, type PulseGuardSnapshotPayload, type PulseGuardApiError } from './pulseguard/api';
-import { PULSEGUARD_FALLBACK_CHECK_FREQUENCY_MS, PULSEGUARD_FALLBACK_CAPTURE_WINDOW_SEC, PULSEGUARD_VERSION, PULSEGUARD_SOURCE } from './pulseguard/constants';
+import { PULSEGUARD_FALLBACK_CHECK_FREQUENCY_MS, PULSEGUARD_FALLBACK_CAPTURE_WINDOW_SEC, PULSEGUARD_VERSION, PULSEGUARD_SOURCE, PULSEGUARD_API_PATH } from './pulseguard/constants';
 import { PulseGuardIndicator } from './components/PulseGuardIndicator';
 import { PulseGuardEnrollment } from './components/PulseGuardEnrollment';
 import { computePulseGuardBehaviorSummary } from './pulseguard/behaviorSummary';
 import { computeDeviceMotionState } from './pulseguard/deviceMotionState';
+import { useBackgroundHeartbeat } from './hooks/useBackgroundHeartbeat';
 import { useI18n } from './i18n/I18nContext';
 
 function extractTokenFromUrl(): string {
@@ -90,6 +91,26 @@ export default function PulseGuardApp() {
 
   // Ref to runCheck for use in the visibility handler (declared early, assigned after runCheck is defined)
   const runCheckRef = useRef<(() => Promise<void>) | null>(null);
+
+  // ─── Background heartbeat (Capacitor native only, no-op on web) ────
+  // Dispatches config to the background-runner so it can send periodic
+  // "device alive" pings while the app is backgrounded. The OS controls
+  // actual timing (15-min min on Android, OS-determined on iOS).
+  // No behavioral data is captured — sensors are inaccessible from the
+  // background-runner JS engine. Full checks continue via JS scheduler
+  // when the app returns to foreground.
+  const heartbeatConfig = state.phase === 'waiting' || state.phase === 'checking'
+    ? {
+        linkToken: linkTokenRef.current,
+        hcsSessionPublicId: `pg_${linkTokenRef.current.slice(-12)}`,
+        apiPath: PULSEGUARD_API_PATH,
+        apiKey: import.meta.env.VITE_PULSEGUARD_API_KEY || '',
+        source: PULSEGUARD_SOURCE,
+        version: PULSEGUARD_VERSION,
+        enabled: true,
+      }
+    : null;
+  useBackgroundHeartbeat(heartbeatConfig);
 
   // ─── Visibility / background management ───────────────────────────
 

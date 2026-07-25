@@ -18,6 +18,6 @@
     "types": []
   },
   "include": ["src", "tests"],
-  "exclude": ["tests/empirical-payload.test.ts"],
+  "exclude": ["tests/empirical-payload.test.ts", "src/pulseguard/background-heartbeat.ts"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }
