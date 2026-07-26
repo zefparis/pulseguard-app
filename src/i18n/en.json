@@ -91,7 +91,8 @@
   "voice.durationTarget": "Speak for at least {min}s (max {max}s)",
   "voice.warmupPrompt": "Say this phrase to start the mic:",
   "voice.warmupPhrase": "Hello, I am ready",
-  "voice.warmupThen": "Then read these digits:",
+  "voice.warmupThen": "Then, read this sentence aloud:",
+  "voice.carrierPhrase": "To verify my voice, I will read the numbers shown on the screen, slowly, one by one: {digits}.",
   "voice.warmupInProgress": "Warming up the microphone…",
   "voice.warmupHint": "Speak naturally — recording starts automatically.",
 

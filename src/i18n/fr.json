@@ -91,7 +91,8 @@
   "voice.durationTarget": "Parlez pendant au moins {min}s (max {max}s)",
   "voice.warmupPrompt": "Dites cette phrase pour démarrer le micro :",
   "voice.warmupPhrase": "Bonjour, je suis prêt",
-  "voice.warmupThen": "Ensuite, lisez ces chiffres :",
+  "voice.warmupThen": "Ensuite, lisez cette phrase à voix haute :",
+  "voice.carrierPhrase": "Pour vérifier ma voix, je lis les chiffres affichés à l'écran, lentement, un par un : {digits}.",
   "voice.warmupInProgress": "Amorçage du micro…",
   "voice.warmupHint": "Parlez naturellement — l'enregistrement démarre automatiquement.",
 

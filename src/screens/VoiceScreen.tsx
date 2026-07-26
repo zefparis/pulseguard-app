@@ -45,7 +45,8 @@ export function VoiceScreen({ sessionPublicId, session, onComplete, onError }: P
   const [serverChallengeId, setServerChallengeId] = useState<string | null>(null);
   const [challengeLoading, setChallengeLoading] = useState(true);
   const [challenge] = useState(() => generateVocalRanChallenge());
-  const phrase = challenge.sequence.join(' ');
+  const digits = challenge.sequence.join(', ');
+  const carrierPhrase = t('voice.carrierPhrase', { digits });
   const [state, setState] = useState<RecordingState>('idle');
   const [interruptMsg, setInterruptMsg] = useState<string | null>(null);
   const startTimeRef = useRef<number>(0);
@@ -161,7 +162,7 @@ export function VoiceScreen({ sessionPublicId, session, onComplete, onError }: P
               <p>{t('voice.warmupPrompt')}</p>
               <p style={{ fontSize: 24, fontWeight: 700 }}>{t('voice.warmupPhrase')}</p>
               <p className="muted" style={{ marginTop: 8 }}>{t('voice.warmupThen')}</p>
-              <p style={{ fontSize: 20, fontWeight: 600, letterSpacing: 4, color: '#888' }}>{phrase}</p>
+              <p style={{ fontSize: 18, fontWeight: 600, lineHeight: 1.6 }}>{carrierPhrase}</p>
               <p className="muted">{t('voice.durationTarget', { min: MIN_VOICED_DURATION_MS / 1000, max: MAX_RECORDING_MS / 1000 })}</p>
               <button className="btn" onClick={handleRecord} disabled={challengeLoading}>{challengeLoading ? '...' : t('voice.record')}</button>
             </>
@@ -176,7 +177,7 @@ export function VoiceScreen({ sessionPublicId, session, onComplete, onError }: P
           {state === 'recording' && (
             <>
               <p style={{ fontSize: 20, fontWeight: 600 }}>{t('voice.recording')}</p>
-              <p style={{ fontSize: 28, fontWeight: 700, letterSpacing: 8 }}>{phrase}</p>
+              <p style={{ fontSize: 22, fontWeight: 700, lineHeight: 1.5 }}>{carrierPhrase}</p>
             </>
           )}
           {state === 'processing' && <p className="muted">{t('voice.processing')}</p>}
