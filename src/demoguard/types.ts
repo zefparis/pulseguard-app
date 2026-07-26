@@ -192,6 +192,8 @@ export interface DemoGuardSensitive {
   voice_b64?: string;
   voice_mimetype?: string;
   mfcc_summary?: number[];
+  voice_nonce?: string;
+  voice_challenge_id?: string;
 }
 
 export const VOICE_KEY = 'voice_b64' as const;

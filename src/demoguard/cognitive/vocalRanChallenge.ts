@@ -45,6 +45,7 @@ export interface VocalRanChallenge {
 
 export function generateVocalRanChallenge(
   itemsCount: number = VOCAL_RAN_ITEMS,
+  challengeId?: string,
 ): VocalRanChallenge {
   const sequence: string[] = [];
   for (let i = 0; i < itemsCount; i++) {
@@ -52,7 +53,7 @@ export function generateVocalRanChallenge(
   }
 
   return {
-    challenge_id: generateVocalRanChallengeId(),
+    challenge_id: challengeId || generateVocalRanChallengeId(),
     expected_hash: hashSequence(sequence),
     items_count: itemsCount,
     sequence, // Only used internally — never sent in safe payload

@@ -12,6 +12,7 @@
  */
 
 import {
+  API_BASE_URL,
   PULSEGUARD_API_PATH,
   PULSEGUARD_LINK_CONFIG_PATH,
   PULSEGUARD_ENROLLMENT_PATH,
@@ -19,6 +20,8 @@ import {
   PULSEGUARD_REQUEST_TIMEOUT_MS,
   PULSEGUARD_SOURCE,
 } from './constants';
+
+const VOICE_CHALLENGE_API_PATH = `${API_BASE_URL}/api/demoguard/voice-challenge`;
 
 export interface PulseGuardSnapshotPayload {
   hcs_session_public_id: string;
@@ -74,6 +77,8 @@ export interface PulseGuardEnrollmentPayload {
   sensitive?: {
     voice_b64?: string;
     voice_mimetype?: string;
+    voice_nonce?: string;
+    voice_challenge_id?: string;
   };
 }
 
@@ -249,6 +254,50 @@ export async function fetchLinkConfig(
     }
 
     return res.json() as Promise<PulseGuardLinkConfig>;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// ─── Voice challenge (anti-replay nonce) ───────────────────────────
+
+export interface VoiceChallengeResponse {
+  ok: boolean;
+  success: boolean;
+  nonce?: string;
+  challenge_id?: string;
+  expires_at?: number;
+  error?: string;
+}
+
+export async function requestVoiceChallenge(
+  sessionPublicId: string,
+): Promise<VoiceChallengeResponse> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), PULSEGUARD_REQUEST_TIMEOUT_MS);
+
+  try {
+    const res = await fetch(VOICE_CHALLENGE_API_PATH, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hcs_session_public_id: sessionPublicId }),
+      signal: controller.signal,
+    });
+
+    if (!res.ok) {
+      let code = 'HTTP_ERROR';
+      let message = `Voice challenge failed: ${res.status}`;
+      try {
+        const body = (await res.json()) as { error?: string; message?: string };
+        if (body.error) code = body.error;
+        if (body.message) message = body.message;
+      } catch {
+        // body not JSON
+      }
+      throw new PulseGuardApiError(res.status, code, message);
+    }
+
+    return res.json() as Promise<VoiceChallengeResponse>;
   } finally {
     clearTimeout(timer);
   }

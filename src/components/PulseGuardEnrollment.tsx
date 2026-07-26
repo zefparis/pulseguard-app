@@ -141,6 +141,8 @@ export function PulseGuardEnrollment({ linkToken, onComplete }: Props) {
   const voiceDiagnosticsRef = useRef<VoiceDiagnosticsSafe | null>(null);
   const voiceB64Ref = useRef<string | null>(null);
   const voiceMimetypeRef = useRef<string | null>(null);
+  const voiceNonceRef = useRef<string | null>(null);
+  const voiceChallengeIdRef = useRef<string | null>(null);
 
   const startEnrollment = () => {
     sessionRef.current = new BehaviorSession();
@@ -156,6 +158,8 @@ export function PulseGuardEnrollment({ linkToken, onComplete }: Props) {
     voiceDiagnosticsRef.current = null;
     voiceB64Ref.current = null;
     voiceMimetypeRef.current = null;
+    voiceNonceRef.current = null;
+    voiceChallengeIdRef.current = null;
     setPhase('reflex');
   };
 
@@ -187,7 +191,12 @@ export function PulseGuardEnrollment({ linkToken, onComplete }: Props) {
       touchDiagnosticsBehavior,
       voice_diagnostics: voiceDiagnosticsRef.current,
       sensitive: voiceB64Ref.current
-        ? { voice_b64: voiceB64Ref.current, voice_mimetype: voiceMimetypeRef.current ?? undefined }
+        ? {
+            voice_b64: voiceB64Ref.current,
+            voice_mimetype: voiceMimetypeRef.current ?? undefined,
+            voice_nonce: voiceNonceRef.current ?? undefined,
+            voice_challenge_id: voiceChallengeIdRef.current ?? undefined,
+          }
         : undefined,
     };
 
@@ -241,12 +250,16 @@ export function PulseGuardEnrollment({ linkToken, onComplete }: Props) {
     voiceB64: string | null,
     vocalRan: VocalRanSignal,
     voiceMimetype: string | null,
+    voiceNonce: string | null,
+    voiceChallengeId: string | null,
   ) => {
     signalsRef.current.vocal_ran = vocalRan;
     sendTestProgress('vocal_ran', 6, vocalRan.quality, summarizeVocalRan(vocalRan), linkToken);
     voiceDiagnosticsRef.current = diagnostic;
     voiceB64Ref.current = voiceB64;
     voiceMimetypeRef.current = voiceMimetype;
+    voiceNonceRef.current = voiceNonce;
+    voiceChallengeIdRef.current = voiceChallengeId;
     submitEnrollment();
   };
 
@@ -327,7 +340,7 @@ export function PulseGuardEnrollment({ linkToken, onComplete }: Props) {
     case 'trail_tap':
       return <TrailTapScreen session={session} onComplete={onTrailTapComplete} onError={onError} />;
     case 'vocal_ran':
-      return <VoiceScreen session={session} onComplete={onVocalRanComplete} onError={onError} />;
+      return <VoiceScreen sessionPublicId={`pg_${linkToken.slice(-12)}`} session={session} onComplete={onVocalRanComplete} onError={onError} />;
     default:
       return null;
   }

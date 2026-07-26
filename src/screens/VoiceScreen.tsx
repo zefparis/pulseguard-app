@@ -12,6 +12,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { recordVoiceChallenge, MIN_VOICED_DURATION_MS, MAX_RECORDING_MS } from '../demoguard/collectors/audioCollector';
 import { generateVocalRanChallenge, computeVocalRanResult } from '../demoguard/cognitive/vocalRanChallenge';
+import { requestVoiceChallenge } from '../pulseguard/api';
 import type { VocalRanSignal } from '../demoguard/cognitive/cognitiveTypes';
 import type { DemoGuardVoiceSignal, VoiceDiagnosticsSafe } from '../demoguard/types';
 import { recordTaskStart } from '../demoguard/behavior/taskBehaviorRecorder';
@@ -22,6 +23,7 @@ import { VadDebugOverlay } from '../components/VadDebugOverlay';
 import { useI18n } from '../i18n/I18nContext';
 
 interface Props {
+  sessionPublicId: string;
   session: BehaviorSession;
   onComplete: (
     voice: DemoGuardVoiceSignal,
@@ -29,14 +31,19 @@ interface Props {
     voiceB64: string | null,
     vocalRan: VocalRanSignal,
     voiceMimetype: string | null,
+    voiceNonce: string | null,
+    voiceChallengeId: string | null,
   ) => void;
   onError: (reason: string) => void;
 }
 
 type RecordingState = 'idle' | 'warming_up' | 'recording' | 'processing' | 'done';
 
-export function VoiceScreen({ session, onComplete, onError }: Props) {
+export function VoiceScreen({ sessionPublicId, session, onComplete, onError }: Props) {
   const { t } = useI18n();
+  const [voiceNonce, setVoiceNonce] = useState<string | null>(null);
+  const [serverChallengeId, setServerChallengeId] = useState<string | null>(null);
+  const [challengeLoading, setChallengeLoading] = useState(true);
   const [challenge] = useState(() => generateVocalRanChallenge());
   const phrase = challenge.sequence.join(' ');
   const [state, setState] = useState<RecordingState>('idle');
@@ -48,12 +55,31 @@ export function VoiceScreen({ session, onComplete, onError }: Props) {
     recordTaskStart(session, 'vocal_ran');
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const result = await requestVoiceChallenge(sessionPublicId);
+        if (cancelled) return;
+        if (result.success && result.nonce && result.challenge_id) {
+          setVoiceNonce(result.nonce);
+          setServerChallengeId(result.challenge_id);
+        }
+      } catch {
+        // Nonce request failed — fall back to local challenge_id (compat mode)
+      } finally {
+        if (!cancelled) setChallengeLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [sessionPublicId]);
+
   const handleRecord = async () => {
     setState('warming_up');
     setInterruptMsg(null);
     try {
       const result = await recordVoiceChallenge(
-        challenge.challenge_id,
+        serverChallengeId || challenge.challenge_id,
         (_referenceMaxEnergy) => {
           // Phase 1 → Phase 2 transition: warm-up complete, real recording starts.
           // Set startTimeRef here (not before warm-up) so RAN duration metric
@@ -112,7 +138,7 @@ export function VoiceScreen({ session, onComplete, onError }: Props) {
         return;
       }
 
-      onComplete(result.safe, diagnostic, result.sensitive?.voice_b64 ?? null, vocalRan, result.sensitive?.voice_mimetype ?? null);
+      onComplete(result.safe, diagnostic, result.sensitive?.voice_b64 ?? null, vocalRan, result.sensitive?.voice_mimetype ?? null, voiceNonce, serverChallengeId);
       setState('done');
     } catch (err) {
       retryRef.current = false;
@@ -137,7 +163,7 @@ export function VoiceScreen({ session, onComplete, onError }: Props) {
               <p className="muted" style={{ marginTop: 8 }}>{t('voice.warmupThen')}</p>
               <p style={{ fontSize: 20, fontWeight: 600, letterSpacing: 4, color: '#888' }}>{phrase}</p>
               <p className="muted">{t('voice.durationTarget', { min: MIN_VOICED_DURATION_MS / 1000, max: MAX_RECORDING_MS / 1000 })}</p>
-              <button className="btn" onClick={handleRecord}>{t('voice.record')}</button>
+              <button className="btn" onClick={handleRecord} disabled={challengeLoading}>{challengeLoading ? '...' : t('voice.record')}</button>
             </>
           )}
           {state === 'warming_up' && (
