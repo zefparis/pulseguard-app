@@ -15,7 +15,7 @@
  * Patents Pending FR2514274 | FR2514546
  */
 
-export type PulseGuardPhase = 'loading' | 'waiting' | 'checking' | 'link_invalid' | 'enrollment' | 'enrollment_submitting';
+export type PulseGuardPhase = 'loading' | 'waiting' | 'checking' | 'link_invalid' | 'enrollment' | 'enrollment_submitting' | 'cognitive_retest';
 
 export interface PulseGuardState {
   phase: PulseGuardPhase;
@@ -63,7 +63,10 @@ export type PulseGuardAction =
   | { type: 'CHECK_CANCELLED' }
   | { type: 'ENROLLMENT_SUBMITTING' }
   | { type: 'ENROLLMENT_SUCCESS' }
-  | { type: 'ENROLLMENT_ERROR'; error: string };
+  | { type: 'ENROLLMENT_ERROR'; error: string }
+  | { type: 'COGNITIVE_RETEST_START' }
+  | { type: 'COGNITIVE_RETEST_COMPLETE' }
+  | { type: 'COGNITIVE_RETEST_SKIP' };
 
 export function pulseguardReducer(
   state: PulseGuardState,
@@ -143,6 +146,19 @@ export function pulseguardReducer(
 
     case 'ENROLLMENT_ERROR': {
       return { ...state, phase: 'enrollment', enrollmentError: action.error };
+    }
+
+    case 'COGNITIVE_RETEST_START': {
+      if (state.phase !== 'waiting') return state;
+      return { ...state, phase: 'cognitive_retest' };
+    }
+
+    case 'COGNITIVE_RETEST_COMPLETE': {
+      return { ...state, phase: 'waiting' };
+    }
+
+    case 'COGNITIVE_RETEST_SKIP': {
+      return { ...state, phase: 'waiting' };
     }
 
     default:

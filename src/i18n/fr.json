@@ -38,6 +38,16 @@
   "enrollment.retry": "Réessayer",
   "enrollment.continue": "Continuer",
 
+  "retest.title": "Contrôle cognitif",
+  "retest.intro": "Vous avez été absent pendant un moment. Un contrôle cognitif rapide est nécessaire avant de reprendre la surveillance.",
+  "retest.start": "Commencer le contrôle",
+  "retest.submitting": "Soumission…",
+  "retest.complete": "Contrôle terminé",
+  "retest.completeDesc": "Contrôle cognitif terminé. La surveillance périodique va reprendre.",
+  "retest.error": "Erreur du contrôle",
+  "retest.retry": "Réessayer",
+  "retest.continue": "Continuer",
+
   "reflex.title": "Réflexe",
   "reflex.round": "Round",
   "reflex.waitGreen": "Attendez le vert…",

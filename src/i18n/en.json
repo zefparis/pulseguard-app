@@ -38,6 +38,16 @@
   "enrollment.retry": "Retry",
   "enrollment.continue": "Continue",
 
+  "retest.title": "Cognitive check",
+  "retest.intro": "You've been away for a while. A quick cognitive check is needed before resuming monitoring.",
+  "retest.start": "Start check",
+  "retest.submitting": "Submitting…",
+  "retest.complete": "Check complete",
+  "retest.completeDesc": "Cognitive check completed. Periodic monitoring will resume.",
+  "retest.error": "Check error",
+  "retest.retry": "Retry",
+  "retest.continue": "Continue",
+
   "reflex.title": "Reflex",
   "reflex.round": "Round",
   "reflex.waitGreen": "Wait for green…",

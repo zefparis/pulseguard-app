@@ -38,6 +38,17 @@ export interface PulseGuardSnapshotPayload {
      * Exists for manager display and future Brain ML raw-data learning.
      */
     device_motion_state?: 'stationary' | 'carried' | 'unknown';
+    /**
+     * Background heartbeat flag — set by @capacitor/background-runner.
+     * When true, the backend skips the full behavioral check pipeline.
+     */
+    background_heartbeat?: boolean;
+    /**
+     * Reason this check was triggered. Defaults to 'periodic' (normal scheduled check).
+     * Set to 'inactivity_retest' when the app returns to foreground after prolonged
+     * inactivity (≥ 4 × checkFrequencyMs) and a cognitive re-test was run.
+     */
+    trigger_reason?: 'periodic' | 'inactivity_retest';
   };
 }
 

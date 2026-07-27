@@ -24,6 +24,8 @@ import { PulseGuardEnrollment } from './components/PulseGuardEnrollment';
 import { computePulseGuardBehaviorSummary } from './pulseguard/behaviorSummary';
 import { computeDeviceMotionState } from './pulseguard/deviceMotionState';
 import { useBackgroundHeartbeat } from './hooks/useBackgroundHeartbeat';
+import { useLastCheckPersistence } from './hooks/useLastCheckPersistence';
+import { PulseGuardCognitiveRetest } from './components/PulseGuardCognitiveRetest';
 import { useI18n } from './i18n/I18nContext';
 
 function extractTokenFromUrl(): string {
@@ -50,6 +52,10 @@ export default function PulseGuardApp() {
   const captureWindowRef = useRef<number>(PULSEGUARD_FALLBACK_CAPTURE_WINDOW_SEC);
   const isCheckingRef = useRef<boolean>(false);
   const lastCheckSentAtRef = useRef<number>(0);
+  const { persist: persistLastCheck, read: readLastCheck } = useLastCheckPersistence();
+
+  /** Multiplier for inactivity threshold — 4 × checkFrequencyMs. */
+  const INACTIVITY_THRESHOLD_MULTIPLIER = 4;
 
   // ─── Extract token and fetch config on mount ─────────────────────
 
@@ -130,15 +136,37 @@ export default function PulseGuardApp() {
         }
       } else {
         dispatch({ type: 'BACKGROUND_EXIT' });
-        // On foreground return: if the time since the last check exceeds the
-        // configured frequency, trigger an immediate check to catch up.
-        // Mobile browsers suspend JS in background, so setTimeout-based
-        // scheduling doesn't fire while the app is hidden. This ensures we
-        // rattrap the missed checks as soon as the user reopens the app.
-        const elapsed = Date.now() - lastCheckSentAtRef.current;
-        if (lastCheckSentAtRef.current > 0 && elapsed >= checkFrequencyRef.current && runCheckRef.current) {
-          runCheckRef.current();
-        }
+        // On foreground return: check if the inactivity period exceeds the
+        // re-test threshold (4 × checkFrequencyMs). If so, trigger a cognitive
+        // re-test instead of a normal behavioral check.
+        //
+        // We read from the persisted timestamp (survives OS kills) rather than
+        // the in-memory ref (lost on kill). The persisted timestamp is the
+        // device-local timeline, which is what the user actually experienced.
+        //
+        // If the persisted timestamp is null (first run, never checked), we
+        // fall back to the in-memory ref. If both are empty, no re-test.
+        const now = Date.now();
+        const inactivityThreshold = checkFrequencyRef.current * INACTIVITY_THRESHOLD_MULTIPLIER;
+
+        void readLastCheck().then((persistedTs) => {
+          const lastActivityTs = persistedTs ?? (lastCheckSentAtRef.current > 0 ? lastCheckSentAtRef.current : null);
+
+          if (lastActivityTs !== null) {
+            const elapsed = now - lastActivityTs;
+
+            if (elapsed >= inactivityThreshold) {
+              // Prolonged inactivity → trigger cognitive re-test
+              console.info(
+                `[PulseGuard] Inactivity detected: ${Math.round(elapsed / 1000)}s elapsed, threshold ${Math.round(inactivityThreshold / 1000)}s — triggering cognitive re-test`,
+              );
+              dispatch({ type: 'COGNITIVE_RETEST_START' });
+            } else if (elapsed >= checkFrequencyRef.current && runCheckRef.current) {
+              // Normal catch-up: missed one or more cycles but below re-test threshold
+              runCheckRef.current();
+            }
+          }
+        });
       }
     };
 
@@ -211,6 +239,7 @@ export default function PulseGuardApp() {
       await submitPulseGuardSnapshot(payload);
       dispatch({ type: 'CHECK_SENT' });
       lastCheckSentAtRef.current = Date.now();
+      void persistLastCheck(lastCheckSentAtRef.current);
     } catch (err) {
       const isApiErr = (e: unknown): e is PulseGuardApiError =>
         e instanceof Error && e.name === 'PulseGuardApiError';
@@ -308,6 +337,14 @@ export default function PulseGuardApp() {
         <PulseGuardEnrollment
           linkToken={linkTokenRef.current}
           onComplete={() => dispatch({ type: 'ENROLLMENT_SUCCESS' })}
+        />
+      )}
+
+      {/* ─── COGNITIVE RE-TEST (inactivity-triggered) ─── */}
+      {state.phase === 'cognitive_retest' && (
+        <PulseGuardCognitiveRetest
+          linkToken={linkTokenRef.current}
+          onComplete={() => dispatch({ type: 'COGNITIVE_RETEST_COMPLETE' })}
         />
       )}
 
