@@ -130,7 +130,7 @@ must use absolute URLs.
 
 A `.env.capacitor` file is provided with:
 ```
-VITE_API_BASE_URL=https://hybrid-vector-api-m5xt.onrender.com
+VITE_API_BASE_URL=https://hybrid-vector-api-owc4.onrender.com
 ```
 
 **Build for Capacitor (native):**

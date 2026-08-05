@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://hybrid-vector-api-m5xt.onrender.com/api/:path*"
+      "destination": "https://hybrid-vector-api-owc4.onrender.com/api/:path*"
     },
     {
       "source": "/(.*)",

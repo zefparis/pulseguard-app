@@ -54,7 +54,7 @@ function getAllowedOrigins(): Set<string> {
 }
 
 function getUpstreamUrl(): string {
-  const base = process.env.HYBRID_VECTOR_API_URL || 'https://hybrid-vector-api-m5xt.onrender.com';
+  const base = process.env.HYBRID_VECTOR_API_URL || 'https://hybrid-vector-api-owc4.onrender.com';
   return `${base.replace(/\/+$/, '')}/demoguard/voice-challenge`;
 }
 
